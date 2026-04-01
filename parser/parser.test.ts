@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Lexer } from "../lexer/lexer";
 //import { TokenType } from "../lexer/token";
 import { Parser } from "./parser";
@@ -8,6 +8,7 @@ import { ExpressionStatement } from "@/ast/expression-statement";
 import { IntegerLiteral } from "@/ast/ast";
 import { PrefixExpression } from "../ast/prefix-expression";
 import { infixExpression } from "../ast/infix-expression";
+import { BooleanLiteral } from "../ast/boolean-literal";
 
 test("should return let statement", () => {
   const input = `let x=5;
@@ -81,6 +82,9 @@ test("should parse return statement", () => {
   expect(program?.statements).toHaveLength(3);
 
   expect(program?.statements[0].tokenLiteral()).toBe("return");
+
+  const returnStmt = program?.statements[0] as any;
+  expect(returnStmt.returnValue.value).toBe(5);
 });
 
 test("Test Identifier Expression", () => {
@@ -234,6 +238,7 @@ test("Operator Precedence Parsing", () => {
     expect(actual).toBe(tt.expected);
   });
 });
+
 function checkParserErrors(parser: Parser) {
   const errors = parser.getErrors();
 
@@ -247,3 +252,171 @@ function checkParserErrors(parser: Parser) {
 
   throw new Error("Parser errors found. Fix them first.");
 }
+
+describe("Operator Precedence Parsing 2", () => {
+  const tests: { input: string; expected: string }[] = [
+    { input: "true", expected: "true" },
+    { input: "false", expected: "false" },
+    { input: "3 > 5 == false", expected: "((3 > 5) == false)" },
+    { input: "3 < 5 == true", expected: "((3 < 5) == true)" },
+  ];
+
+  tests.forEach((tt) => {
+    test(`parses "${tt.input}" correctly`, () => {
+      const lexer = Lexer.new(tt.input);
+      const parser = Parser.new(lexer);
+      const program = parser.parseProgram();
+
+      const actual = program.string();
+      expect(actual).toBe(tt.expected);
+    });
+  });
+});
+
+test(" test boolean expression", () => {
+  const tests = [
+    { input: "true;", expected: "true" },
+    { input: "false;", expected: "false" },
+  ];
+
+  tests.forEach((tt) => {
+    const lexer = Lexer.new(tt.input);
+    const parser = Parser.new(lexer);
+    const program = parser.parseProgram();
+
+    checkParserErrors(parser);
+
+    const stmt = program.statements[0] as ExpressionStatement;
+
+    expect(stmt.expression).toBeInstanceOf(BooleanLiteral);
+
+    const boolExp = stmt.expression as BooleanLiteral;
+
+    expect(boolExp.string()).toBe(tt.expected);
+  });
+});
+
+describe("Boolean Literal Parsing", () => {
+  test("parses 'true' correctly", () => {
+    const input = "true;";
+    let lexer = Lexer.new(input);
+    const parser = new Parser(lexer);
+    const program = parser.parseProgram();
+
+    const exp = (program.statements[0] as ExpressionStatement)
+      .expression as BooleanLiteral;
+
+    // Directly check the type
+    expect(exp).toBeInstanceOf(BooleanLiteral);
+
+    // Check the value
+    expect(exp.string()).toBe("true");
+
+    // Check the token literal
+    expect(exp.tokenLiteral()).toBe("true");
+  });
+
+  test("parses 'false' correctly", () => {
+    const input = "false;";
+    let lexer = Lexer.new(input);
+    const parser = new Parser(lexer);
+    const program = parser.parseProgram();
+
+    const exp = (program.statements[0] as ExpressionStatement)
+      .expression as BooleanLiteral;
+
+    // Directly check the type
+    expect(exp).toBeInstanceOf(BooleanLiteral);
+
+    // Check the value
+    expect(exp.string()).toBe("false");
+
+    // Check the token literal
+    expect(exp.tokenLiteral()).toBe("false");
+  });
+});
+
+describe("Parsing infix expressions", () => {
+  const infixTests = [
+    {
+      input: "true == true",
+      leftValue: true,
+      operator: "==",
+      rightValue: true,
+    },
+    {
+      input: "true != false",
+      leftValue: true,
+      operator: "!=",
+      rightValue: false,
+    },
+    {
+      input: "false == false",
+      leftValue: false,
+      operator: "==",
+      rightValue: false,
+    },
+  ];
+
+  infixTests.forEach((tt) => {
+    test(`parses ${tt.input}`, () => {
+      const lexer = new Lexer(tt.input);
+      const parser = new Parser(lexer);
+      const program = parser.parseProgram();
+
+      expect(program.statements.length).toBe(1);
+
+      const stmt = program.statements[0] as ExpressionStatement;
+      const exp = stmt.expression as infixExpression;
+
+      // Direct inline checks for left value
+      const left = exp.left as BooleanLiteral;
+      expect(left).toBeInstanceOf(BooleanLiteral);
+      expect(left.value).toBe(tt.leftValue);
+
+      // Operator check
+      expect(exp.operator).toBe(tt.operator);
+
+      // Direct inline checks for right value
+      const right = exp.right as BooleanLiteral;
+      expect(right).toBeInstanceOf(BooleanLiteral);
+      expect(right.value).toBe(tt.rightValue);
+    });
+  });
+});
+
+describe("Parsing prefix expressions", () => {
+  const prefixTests = [
+    {
+      input: "!true",
+      operator: "!",
+      rightValue: true,
+    },
+    {
+      input: "!false",
+      operator: "!",
+      rightValue: false,
+    },
+  ];
+
+  prefixTests.forEach((tt) => {
+    test(`parses ${tt.input}`, () => {
+      const lexer = new Lexer(tt.input);
+      const parser = new Parser(lexer);
+      const program = parser.parseProgram();
+
+      expect(program.statements.length).toBe(1);
+
+      const stmt = program.statements[0] as ExpressionStatement;
+      const exp = stmt.expression as PrefixExpression;
+
+      // Operator check
+      expect(exp.operator).toBe(tt.operator);
+
+      // Direct inline checks for right value
+      const right = exp.right as BooleanLiteral;
+      expect(right).toBeInstanceOf(BooleanLiteral);
+      expect(right.value).toBe(tt.rightValue);
+    });
+  });
+});

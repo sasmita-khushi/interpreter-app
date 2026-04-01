@@ -9,6 +9,7 @@ import { Token, TokenType } from "@/lexer/token";
 import { PrefixExpression } from "../ast/prefix-expression";
 import { infixExpression } from "../ast/infix-expression";
 import { trace, untrace } from "../trace";
+import { BooleanLiteral } from "../ast/boolean-literal";
 
 enum Precedence {
   LOWEST = 1,
@@ -44,6 +45,32 @@ export class Parser {
 
   constructor(lexer: Lexer) {
     this.lexer = lexer;
+    this.nextToken();
+    this.nextToken();
+    this.registerPrefix(TokenType.IDENT, () => this.parseIdentifier());
+    this.registerPrefix(TokenType.INT, () => this.parseIntegerLiteral());
+    this.registerPrefix(TokenType.BANG, () => this.parsePrefixExpression());
+    this.registerPrefix(TokenType.MINUS, () => this.parsePrefixExpression());
+    this.registerInfix(TokenType.PLUS, (left) =>
+      this.parseInfixExpression(left),
+    );
+    this.registerInfix(TokenType.MINUS, (left) =>
+      this.parseInfixExpression(left),
+    );
+    this.registerInfix(TokenType.SLASH, (left) =>
+      this.parseInfixExpression(left),
+    );
+    this.registerInfix(TokenType.ASTERISK, (left) =>
+      this.parseInfixExpression(left),
+    );
+    this.registerInfix(TokenType.EQ, (left) => this.parseInfixExpression(left));
+    this.registerInfix(TokenType.NOT_EQ, (left) =>
+      this.parseInfixExpression(left),
+    );
+    this.registerInfix(TokenType.LT, (left) => this.parseInfixExpression(left));
+    this.registerInfix(TokenType.GT, (left) => this.parseInfixExpression(left));
+    this.registerPrefix(TokenType.TRUE, () => this.parseBoolean());
+    this.registerPrefix(TokenType.FALSE, () => this.parseBoolean());
   }
 
   private nextToken() {
@@ -52,40 +79,7 @@ export class Parser {
   }
 
   public static new(lexer: Lexer): Parser {
-    const parser = new Parser(lexer);
-    parser.nextToken();
-    parser.nextToken();
-    parser.registerPrefix(TokenType.IDENT, () => parser.parseIdentifier());
-    parser.registerPrefix(TokenType.INT, () => parser.parseIntegerLiteral());
-    parser.registerPrefix(TokenType.BANG, () => parser.parsePrefixExpression());
-    parser.registerPrefix(TokenType.MINUS, () =>
-      parser.parsePrefixExpression(),
-    );
-    parser.registerInfix(TokenType.PLUS, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.MINUS, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.SLASH, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.ASTERISK, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.EQ, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.NOT_EQ, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.LT, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    parser.registerInfix(TokenType.GT, (left) =>
-      parser.parseInfixExpression(left),
-    );
-    return parser;
+    return new Parser(lexer);
   }
 
   curTokenIs(type: TokenType): boolean {
@@ -158,6 +152,10 @@ export class Parser {
     const stmt = new ReturnStatement(this.curToken!);
 
     this.nextToken();
+
+    // Parse the expression after 'return'
+    const returnValue = this.parseExpression(Precedence.LOWEST);
+    stmt.returnValue = returnValue ?? undefined;
 
     // TODO: We're skipping the expressions until we encounter a semicolon
     while (
@@ -240,6 +238,11 @@ export class Parser {
   private parseExpression(precedence: number): Expression | null {
     const t = trace("parseExpression");
     try {
+      if (!this.curToken) {
+        this.errors.push("current token is undefined");
+        return null;
+      }
+
       const prefix = this.prefixParseFns.get(this.curToken!.type); //👉 This line decides:“Which function should parse this token?
 
       if (!prefix) {
@@ -370,5 +373,12 @@ export class Parser {
     } finally {
       untrace(t);
     }
+  }
+
+  private parseBoolean(): Expression {
+    return BooleanLiteral.new(
+      this.curToken!,
+      this.curToken!.type === TokenType.TRUE,
+    );
   }
 }
