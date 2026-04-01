@@ -18,6 +18,7 @@ export class PrefixExpression implements Expression {
     return this.token.literal;
   }
 
+  // It converts your AST node back into a readable string
   string(): string {
     return `(${this.operator}${this.right?.string() ?? ""})`;
   }

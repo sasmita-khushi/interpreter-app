@@ -8,15 +8,16 @@ import { Lexer } from "@/lexer/lexer";
 import { Token, TokenType } from "@/lexer/token";
 import { PrefixExpression } from "../ast/prefix-expression";
 import { infixExpression } from "../ast/infix-expression";
+import { trace, untrace } from "../trace";
 
 enum Precedence {
   LOWEST = 1,
-  EQUALS = 2,
-  LESSGREATER = 3,
-  SUM = 4,
-  PRODUCT = 5,
-  PREFIX = 6,
-  CALL = 7,
+  EQUALS = 2, // == or !=
+  LESSGREATER = 3, // > or <
+  SUM = 4, // + or -
+  PRODUCT = 5, // * or /
+  PREFIX = 6, // ! or -a
+  CALL = 7, // function calls
 }
 
 const precendences = new Map<TokenType, Precedence>([
@@ -188,20 +189,25 @@ export class Parser {
     // if (!expr) {
     //   return undefined;
     // }
+    const t = trace("parseExpressionStatement");
+    try {
+      const stmt = ExpressionStatement.new(this.curToken!);
+      const expr = this.parseExpression(Precedence.LOWEST);
+      if (!expr) {
+        return undefined;
+      }
+      stmt.expression = expr;
 
-    const stmt = ExpressionStatement.new(this.curToken!);
-    const expr = this.parseExpression(Precedence.LOWEST);
-    if (!expr) {
-      return undefined;
+      if (this.peekTokenIs(TokenType.SEMICOLON)) {
+        this.nextToken();
+      }
+
+      return stmt;
+    } finally {
+      untrace(t);
     }
-    stmt.expression = expr;
-
-    if (this.peekTokenIs(TokenType.SEMICOLON)) {
-      this.nextToken();
-    }
-
-    return stmt;
   }
+
   // 🔤 parseIdentifier
 
   private parseIdentifier(): Identifier {
@@ -211,41 +217,52 @@ export class Parser {
   // 🔢 parseIntegerLiteral
 
   parseIntegerLiteral(): Expression {
-    const lit = IntegerLiteral.new(this.curToken!, 0);
-    const value = parseInt(this.curToken!.literal, 10);
+    const t = trace("parseIntegerLiteral");
+    try {
+      const lit = IntegerLiteral.new(this.curToken!, 0);
+      const value = parseInt(this.curToken!.literal, 10);
 
-    if (isNaN(value)) {
-      const msg = `could not parse "${this.curToken!.literal}" as integer`;
-      this.errors.push(msg);
+      if (isNaN(value)) {
+        const msg = `could not parse "${this.curToken!.literal}" as integer`;
+        this.errors.push(msg);
+        return lit;
+      }
+
+      lit.value = value;
+
       return lit;
+    } finally {
+      untrace(t);
     }
-
-    lit.value = value;
-
-    return lit;
   }
 
   // 🔢 parseExpression (basic)
   private parseExpression(precedence: number): Expression | null {
-    const prefix = this.prefixParseFns.get(this.curToken!.type);
-    if (!prefix) {
-      this.noPrefixParserFnError(this.curToken!.type);
-      return null;
-    }
-    let leftExp = prefix();
-    while (
-      !this.peekTokenIs(TokenType.SEMICOLON) &&
-      precedence < this.peekPrecedence()
-    ) {
-      const infix = this.infixParseFns.get(this.peekToken!.type);
-      if (!infix) {
-        return leftExp;
-      }
+    const t = trace("parseExpression");
+    try {
+      const prefix = this.prefixParseFns.get(this.curToken!.type); //👉 This line decides:“Which function should parse this token?
 
-      this.nextToken();
-      leftExp = infix(leftExp!);
+      if (!prefix) {
+        this.noPrefixParserFnError(this.curToken!.type);
+        return null;
+      }
+      let leftExp = prefix();
+      while (
+        !this.peekTokenIs(TokenType.SEMICOLON) &&
+        precedence < this.peekPrecedence()
+      ) {
+        const infix = this.infixParseFns.get(this.peekToken!.type);
+        if (!infix) {
+          return leftExp;
+        }
+
+        this.nextToken();
+        leftExp = infix(leftExp!);
+      }
+      return leftExp;
+    } finally {
+      untrace(t);
     }
-    return leftExp;
   }
 
   // 🧠 Helper functions
@@ -270,21 +287,30 @@ export class Parser {
     this.infixParseFns.set(type, fn);
   }
 
-  parsePrefixExpression(): Expression | null {
-    const expression = PrefixExpression.new(
-      this.curToken!,
+  // 1. See operator
+  //2. Move to next token
+  //3. Parse the whole right expression
+  //4. Attach it to operator
+  private parsePrefixExpression(): Expression | null {
+    const t = trace("parsePrefixExpression");
+    try {
+      const expression = PrefixExpression.new(
+        this.curToken!,
 
-      this.curToken!.literal,
-    );
-    this.nextToken();
+        this.curToken!.literal,
+      );
+      this.nextToken();
 
-    const right = this.parseExpression(Precedence.PREFIX);
-    if (!right) {
-      return null;
+      const right = this.parseExpression(Precedence.PREFIX);
+      if (!right) {
+        return null;
+      }
+      expression.right = right;
+
+      return expression;
+    } finally {
+      untrace(t);
     }
-    expression.right = right;
-
-    return expression;
   }
 
   private noPrefixParserFnError(t: TokenType) {
@@ -293,29 +319,56 @@ export class Parser {
     return null;
   }
 
+  //Gets precedence of next operator
   private peekPrecedence(): Precedence {
     return precendences.get(this.peekToken!.type) || Precedence.LOWEST;
   }
 
+  //Gets precedence of current operator
   private curPrecedence(): Precedence {
     return precendences.get(this.curToken!.type) || Precedence.LOWEST;
   }
 
-  private parseInfixExpression(left: Expression): Expression | null {
-    const expression = infixExpression.new(
-      this.curToken!,
-      left,
-      this.curToken!.literal,
-    );
+  // private parseInfixExpression(left: Expression): Expression | null {
+  //   const expression = infixExpression.new(
+  //     this.curToken!,
+  //     left,
+  //     this.curToken!.literal,
+  //   );
 
-    const precedence = this.curPrecedence();
-    this.nextToken();
-    const right = this.parseExpression(precedence);
-    if (!right) {
-      return null;
+  //   const precedence = this.curPrecedence();
+  //   this.nextToken();
+  //   const right = this.parseExpression(precedence);
+  //   if (!right) {
+  //     return null;
+  //   }
+  //   expression.right = right;
+
+  //   return expression;
+  // }
+  private parseInfixExpression(left: Expression): Expression {
+    const t = trace("parseInfixExpression");
+    try {
+      const expression = infixExpression.new(
+        this.curToken!,
+        left,
+        this.curToken!.literal,
+      );
+
+      const precedence = this.curPrecedence();
+      this.nextToken();
+
+      const right = this.parseExpression(precedence);
+
+      if (!right) {
+        throw new Error("parseExpression returned null");
+      }
+
+      expression.right = right;
+
+      return expression;
+    } finally {
+      untrace(t);
     }
-    expression.right = right;
-
-    return expression;
   }
 }
