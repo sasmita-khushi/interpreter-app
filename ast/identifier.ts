@@ -15,6 +15,7 @@ export class Identifier implements Expression {
   }
 
   public expressionNode(): void {}
+
   public tokenLiteral(): string {
     return this.token.literal;
   }

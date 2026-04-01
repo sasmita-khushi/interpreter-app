@@ -5,6 +5,8 @@ import { Parser } from "./parser";
 import { LetStatement } from "../ast/let-statement";
 import { Identifier } from "@/ast/identifier";
 import { ExpressionStatement } from "@/ast/expression-statement";
+import { IntegerLiteral } from "@/ast/ast";
+import { PrefixExpression } from "../ast/prefix-expression";
 
 test("should return let statement", () => {
   const input = `let x=5;
@@ -101,3 +103,60 @@ test("Test Identifier Expression", () => {
   expect(id.value).toBe("foobar");
   expect(id.tokenLiteral()).toBe("foobar");
 });
+
+test("Test Integer Literal Expression", () => {
+  const input = `5;`;
+
+  let lexer = Lexer.new(input);
+  const parser = Parser.new(lexer);
+  const program = parser.parseProgram();
+
+  expect(program).toBeDefined();
+
+  expect(program?.statements).toHaveLength(1);
+
+  const stmt = program.statements[0];
+
+  // check ExpressionStatement
+
+  expect(stmt).toBeInstanceOf(ExpressionStatement);
+  const expressionStmt = stmt as ExpressionStatement;
+
+  // check IntegerLiteral
+  expect(expressionStmt.expression).toBeInstanceOf(IntegerLiteral);
+  const literal = expressionStmt.expression as IntegerLiteral;
+
+  // check value
+  expect(literal.value).toBe(5);
+
+  // check token literal
+  expect(literal.tokenLiteral()).toBe("5");
+});
+
+test("test parsing prefix operator", () => {
+  let prefixTests = [
+    { input: "!5;", operator: "!", integerValue: 5 },
+    { input: "-15;", operator: "-", integerValue: 15 },
+  ];
+
+  for (const tt of prefixTests) {
+    let lexer = Lexer.new(tt.input);
+    const parser = Parser.new(lexer);
+    const program = parser.parseProgram();
+
+    expect(program).toBeDefined();
+    // Step 1: Check number of statements
+    expect(program.statements.length).toBe(1);
+
+    // Step 2: Check it's ExpressionStatement
+    const stmt = program.statements[0] as ExpressionStatement;
+
+    // Step 3: Check it's PrefixExpression
+    const exp = stmt.expression as PrefixExpression;
+
+    // Step 4: Check operator
+    expect(exp.operator).toBe(tt.operator);
+    expect((exp.right as IntegerLiteral).value).toBe(tt.integerValue);
+  }
+});
+// further checks for prefix expression can be added here

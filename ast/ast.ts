@@ -16,6 +16,9 @@ export interface Expression extends AstNode {
 }
 
 //Number
+//IntegerLiteral is an AST node that represents numeric values,
+//storing both the original token and its parsed numeric value.
+
 export class IntegerLiteral implements Expression {
   token: Token; // the original token (e.g. INT token with "5")
   value: number; // actual numeric value (e.g. 5)
@@ -34,5 +37,8 @@ export class IntegerLiteral implements Expression {
 
   public string(): string {
     return this.token.literal;
+  }
+  public static new(token: Token, value: number): IntegerLiteral {
+    return new IntegerLiteral(token, value);
   }
 }
