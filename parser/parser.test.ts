@@ -7,6 +7,7 @@ import { Identifier } from "@/ast/identifier";
 import { ExpressionStatement } from "@/ast/expression-statement";
 import { IntegerLiteral } from "@/ast/ast";
 import { PrefixExpression } from "../ast/prefix-expression";
+import { infixExpression } from "../ast/infix-expression";
 
 test("should return let statement", () => {
   const input = `let x=5;
@@ -159,4 +160,90 @@ test("test parsing prefix operator", () => {
     expect((exp.right as IntegerLiteral).value).toBe(tt.integerValue);
   }
 });
-// further checks for prefix expression can be added here
+
+test("paring infix operator", () => {
+  const infixTests = [
+    { input: "5 + 5;", leftValue: 5, operator: "+", rightValue: 5 },
+    { input: "5 - 5;", leftValue: 5, operator: "-", rightValue: 5 },
+    { input: "5 * 5;", leftValue: 5, operator: "*", rightValue: 5 },
+    { input: "5 / 5;", leftValue: 5, operator: "/", rightValue: 5 },
+    { input: "5 > 5;", leftValue: 5, operator: ">", rightValue: 5 },
+    { input: "5 < 5;", leftValue: 5, operator: "<", rightValue: 5 },
+    { input: "5 == 5;", leftValue: 5, operator: "==", rightValue: 5 },
+    { input: "5 != 5;", leftValue: 5, operator: "!=", rightValue: 5 },
+  ];
+
+  infixTests.forEach((tt) => {
+    let lexer = Lexer.new(tt.input);
+    const parser = Parser.new(lexer);
+    const program = parser.parseProgram();
+
+    expect(program).toBeDefined();
+    expect(program.statements.length).toBe(1);
+
+    const stmt = program.statements[0] as ExpressionStatement;
+
+    const exp = stmt.expression as infixExpression;
+
+    expect((exp.left as IntegerLiteral).value).toBe(tt.leftValue);
+    expect(exp.operator).toBe(tt.operator);
+    expect((exp.right as IntegerLiteral).value).toBe(tt.rightValue);
+  });
+});
+
+test("Operator Precedence Parsing", () => {
+  const tests: { input: string; expected: string }[] = [
+    { input: "-a * b", expected: "((-a) * b)" },
+    { input: "!-a", expected: "(!(-a))" },
+    { input: "a + b + c", expected: "((a + b) + c)" },
+    { input: "a + b - c", expected: "((a + b) - c)" },
+    { input: "a * b * c", expected: "((a * b) * c)" },
+    { input: "a * b / c", expected: "((a * b) / c)" },
+    { input: "a + b / c", expected: "(a + (b / c))" },
+    {
+      input: "a + b * c + d / e - f",
+      expected: "(((a + (b * c)) + (d / e)) - f)",
+    },
+    {
+      input: "3 + 4; -5 * 5",
+      expected: "(3 + 4)((-5) * 5)",
+    },
+    {
+      input: "5 > 4 == 3 < 4",
+      expected: "((5 > 4) == (3 < 4))",
+    },
+    {
+      input: "5 < 4 != 3 > 4",
+      expected: "((5 < 4) != (3 > 4))",
+    },
+    {
+      input: "3 + 4 * 5 == 3 * 1 + 4 * 5",
+      expected: "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+    },
+  ];
+
+  tests.forEach((tt) => {
+    const lexer = Lexer.new(tt.input);
+    const parser = Parser.new(lexer);
+    const program = parser.parseProgram();
+
+    checkParserErrors(parser);
+
+    const actual = program.string();
+
+    expect(actual).toBe(tt.expected);
+  });
+});
+function checkParserErrors(parser: Parser) {
+  const errors = parser.getErrors();
+
+  if (!errors || errors.length === 0) return;
+
+  console.error("Parser has errors:");
+
+  errors.forEach((err) => {
+    console.error(" - " + err);
+  });
+
+  throw new Error("Parser errors found. Fix them first.");
+}
