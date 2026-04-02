@@ -9,6 +9,9 @@ import { IntegerLiteral } from "@/ast/ast";
 import { PrefixExpression } from "../ast/prefix-expression";
 import { infixExpression } from "../ast/infix-expression";
 import { BooleanLiteral } from "../ast/boolean-literal";
+import { Program } from "@/ast/program";
+import { IfExpression } from "@/ast/if-expression";
+import { BlockStatement } from "../ast/block-statement";
 
 test("should return let statement", () => {
   const input = `let x=5;
@@ -419,4 +422,124 @@ describe("Parsing prefix expressions", () => {
       expect(right.value).toBe(tt.rightValue);
     });
   });
+});
+
+describe("Operator Precedence Parsing", () => {
+  const tests: { input: string; expected: string }[] = [
+    { input: "1 + (2 + 3) + 4", expected: "((1 + (2 + 3)) + 4)" },
+    { input: "(5 + 5) * 2", expected: "((5 + 5) * 2)" },
+    { input: "2 / (5 + 5)", expected: "(2 / (5 + 5))" },
+    { input: "-(5 + 5)", expected: "(-(5 + 5))" },
+    { input: "!(true == true)", expected: "(!(true == true))" },
+  ];
+
+  tests.forEach(({ input, expected }) => {
+    test(`parses '${input}' correctly`, () => {
+      const lexer = new Lexer(input);
+      const parser = new Parser(lexer);
+      const program: Program = parser.parseProgram();
+
+      // Convert the AST back to string to check precedence
+      const actual = program.string();
+
+      expect(actual).toBe(expected);
+    });
+  });
+});
+
+test("Test If Expression (no helpers)", () => {
+  const input = "if (x < y) { x }";
+
+  const lexer = new Lexer(input);
+  const parser = new Parser(lexer);
+  const program = parser.parseProgram();
+
+  expect(parser.getErrors().length).toBe(0);
+
+  expect(program.statements.length).toBe(1);
+
+  // ✅ statement type
+  const stmt = program.statements[0];
+  expect(stmt).toBeInstanceOf(ExpressionStatement);
+
+  const expStmt = stmt as ExpressionStatement;
+
+  // ✅ expression should be IfExpression
+  expect(expStmt.expression).toBeInstanceOf(IfExpression);
+
+  const ifExp = expStmt.expression as IfExpression;
+
+  // 🔥 CONDITION: x < y
+  expect(ifExp.condition).toBeInstanceOf(infixExpression);
+
+  const condition = ifExp.condition as infixExpression;
+
+  // left: x
+  expect(condition.left).toBeInstanceOf(Identifier);
+  expect((condition.left as Identifier).value).toBe("x");
+
+  // operator: <
+  expect(condition.operator).toBe("<");
+
+  // right: y
+  expect(condition.right).toBeInstanceOf(Identifier);
+  expect((condition.right as Identifier).value).toBe("y");
+
+  // 🔥 CONSEQUENCE
+  expect(ifExp.consequence.statements.length).toBe(1);
+
+  const consequenceStmt = ifExp.consequence.statements[0];
+  expect(consequenceStmt).toBeInstanceOf(ExpressionStatement);
+
+  const consExp = (consequenceStmt as ExpressionStatement).expression;
+
+  expect(consExp).toBeInstanceOf(Identifier);
+  expect((consExp as Identifier).value).toBe("x");
+
+  // 🔥 NO ELSE
+  expect(ifExp.alternative).toBeUndefined();
+});
+
+test("parses if-else expression correctly", () => {
+  const input = "if (x < y) { x } else { y }";
+
+  const lexer = Lexer.new(input);
+  const parser = new Parser(lexer);
+  const program = parser.parseProgram();
+
+  // program should have 1 statement
+  expect(program.statements.length).toBe(1);
+
+  const stmt = program.statements[0] as ExpressionStatement;
+  expect(stmt).toBeInstanceOf(ExpressionStatement);
+
+  const exp = stmt.expression as IfExpression;
+  expect(exp).toBeInstanceOf(IfExpression);
+
+  // 🔹 Check condition: (x < y)
+  const condition = exp.condition as infixExpression;
+  expect(condition.operator).toBe("<");
+
+  const left = condition.left as Identifier;
+  expect(left.value).toBe("x");
+
+  const right = condition.right as Identifier;
+  expect(right.value).toBe("y");
+
+  // 🔹 Check consequence: { x }
+  const consequence = exp.consequence as BlockStatement;
+  expect(consequence.statements.length).toBe(1);
+
+  const consStmt = consequence.statements[0] as ExpressionStatement;
+  const consExp = consStmt.expression as Identifier;
+  expect(consExp.value).toBe("x");
+
+  // 🔹 Check alternative: { y }
+  const alternative = exp.alternative as BlockStatement;
+  expect(alternative).toBeDefined();
+  expect(alternative.statements.length).toBe(1);
+
+  const altStmt = alternative.statements[0] as ExpressionStatement;
+  const altExp = altStmt.expression as Identifier;
+  expect(altExp.value).toBe("y");
 });

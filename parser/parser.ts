@@ -10,6 +10,8 @@ import { PrefixExpression } from "../ast/prefix-expression";
 import { infixExpression } from "../ast/infix-expression";
 import { trace, untrace } from "../trace";
 import { BooleanLiteral } from "../ast/boolean-literal";
+import { IfExpression } from "@/ast/if-expression";
+import { BlockStatement } from "../ast/block-statement";
 
 enum Precedence {
   LOWEST = 1,
@@ -51,6 +53,11 @@ export class Parser {
     this.registerPrefix(TokenType.INT, () => this.parseIntegerLiteral());
     this.registerPrefix(TokenType.BANG, () => this.parsePrefixExpression());
     this.registerPrefix(TokenType.MINUS, () => this.parsePrefixExpression());
+    this.registerPrefix(
+      TokenType.LPAREN,
+      this.parseGroupedExpression.bind(this),
+    );
+    this.registerPrefix(TokenType.IF, () => this.parseIfExpression());
     this.registerInfix(TokenType.PLUS, (left) =>
       this.parseInfixExpression(left),
     );
@@ -115,35 +122,40 @@ export class Parser {
   // 🔥 parseLetStatement
 
   private parseLetStatement(): LetStatement | null {
-    const stmt = LetStatement.new(this.curToken!);
+    const t = trace("parseLetStatement");
+    try {
+      const stmt = LetStatement.new(this.curToken!);
 
-    // move to identifier
-    this.nextToken();
-
-    if (!this.curToken) return null;
-
-    stmt.name = this.parseIdentifier();
-
-    // expect =
-    if (!this.expectPeek(TokenType.ASSIGN)) {
-      return null;
-    }
-
-    // move to expression
-    this.nextToken();
-
-    const expression = this.parseExpression(Precedence.LOWEST);
-    if (!expression) {
-      return null;
-    }
-    stmt.value = expression;
-
-    // optional ;
-    if (this.peekToken?.type === TokenType.SEMICOLON) {
+      // move to identifier
       this.nextToken();
-    }
 
-    return stmt;
+      if (!this.curToken) return null;
+
+      stmt.name = this.parseIdentifier();
+
+      // expect =
+      if (!this.expectPeek(TokenType.ASSIGN)) {
+        return null;
+      }
+
+      // move to expression
+      this.nextToken();
+
+      const expression = this.parseExpression(Precedence.LOWEST);
+      if (!expression) {
+        return null;
+      }
+      stmt.value = expression;
+
+      // optional ;
+      if (this.peekToken?.type === TokenType.SEMICOLON) {
+        this.nextToken();
+      }
+
+      return stmt;
+    } finally {
+      untrace(t);
+    }
   }
 
   //parse return statement
@@ -169,13 +181,18 @@ export class Parser {
 
   // 🔥 Parse Statement
   private parseStatement() {
-    switch (this.curToken?.type) {
-      case TokenType.LET:
-        return this.parseLetStatement();
-      case TokenType.RETURN:
-        return this.parseReturnStatement();
-      default:
-        return this.parseExpressionStatement();
+    const t = trace("parseStatement");
+    try {
+      switch (this.curToken?.type) {
+        case TokenType.LET:
+          return this.parseLetStatement();
+        case TokenType.RETURN:
+          return this.parseReturnStatement();
+        default:
+          return this.parseExpressionStatement();
+      }
+    } finally {
+      untrace(t);
     }
   }
 
@@ -209,7 +226,15 @@ export class Parser {
   // 🔤 parseIdentifier
 
   private parseIdentifier(): Identifier {
-    return new Identifier(this.curToken!, this.curToken!.literal);
+    const t = trace("parseIdentifier");
+    try {
+      if (!this.curToken) {
+        throw new Error("current token is undefined");
+      }
+      return new Identifier(this.curToken, this.curToken.literal);
+    } finally {
+      untrace(t);
+    }
   }
 
   // 🔢 parseIntegerLiteral
@@ -349,6 +374,7 @@ export class Parser {
 
   //   return expression;
   // }
+
   private parseInfixExpression(left: Expression): Expression {
     const t = trace("parseInfixExpression");
     try {
@@ -380,5 +406,87 @@ export class Parser {
       this.curToken!,
       this.curToken!.type === TokenType.TRUE,
     );
+  }
+
+  parseGroupedExpression(): Expression | null {
+    this.nextToken(); // skip '('
+    const exp = this.parseExpression(Precedence.LOWEST);
+    if (!this.expectPeek(TokenType.RPAREN)) {
+      return null;
+    }
+    return exp;
+  }
+
+  parseBlockStatement(): BlockStatement {
+    const block = new BlockStatement(this.curToken!);
+
+    block.statements = [];
+
+    // move to first statement inside '{'
+    this.nextToken();
+
+    while (
+      !this.curTokenIs(TokenType.RBRACE) &&
+      !this.curTokenIs(TokenType.EOF)
+    ) {
+      const stmt = this.parseStatement();
+
+      if (stmt) {
+        block.statements.push(stmt);
+      }
+
+      this.nextToken();
+    }
+
+    return block;
+  }
+
+  parseIfExpression(): Expression | null {
+    // expect '('
+    if (!this.expectPeek(TokenType.LPAREN)) {
+      return null;
+    }
+
+    this.nextToken();
+
+    // parse condition
+    const condition = this.parseExpression(Precedence.LOWEST);
+    if (!condition) {
+      return null;
+    }
+
+    // expect ')'
+    if (!this.expectPeek(TokenType.RPAREN)) {
+      return null;
+    }
+
+    // expect '{'
+    if (!this.expectPeek(TokenType.LBRACE)) {
+      return null;
+    }
+
+    // parse consequence block
+    const consequence = this.parseBlockStatement();
+
+    // 🔹 handle else
+    let alternative: BlockStatement | undefined;
+    if (this.peekTokenIs(TokenType.ELSE)) {
+      this.nextToken();
+
+      if (!this.expectPeek(TokenType.LBRACE)) {
+        return null;
+      }
+
+      alternative = this.parseBlockStatement();
+    }
+
+    const expression = new IfExpression(
+      this.curToken!,
+      condition,
+      consequence,
+      alternative,
+    );
+
+    return expression;
   }
 }
