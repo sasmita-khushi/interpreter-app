@@ -1,53 +1,49 @@
 import * as readline from "readline";
-import { Lexer } from "@/lexer/lexer";
-import { Parser } from "@/parser/parser";
+import { Lexer } from "../lexer/lexer";
+import { Parser } from "../parser/parser";
+import { Eval } from "../evaluator/evaluator";
+import { infixExpression } from "@/ast/infix-expression";
 
 const PROMPT = ">> ";
 
-export function start(
-  input: NodeJS.ReadableStream,
-  output: NodeJS.WritableStream,
-) {
+export function start() {
   const rl = readline.createInterface({
-    input,
-    output,
-    terminal: false,
+    input: process.stdin,
+    output: process.stdout,
+    prompt: PROMPT,
   });
 
-  function ask() {
-    output.write(PROMPT);
+  rl.prompt();
 
-    rl.once("line", (line: string) => {
-      const lexer = new Lexer(line);
-      const parser = new Parser(lexer);
-      const program = parser.parseProgram();
+  rl.on("line", (line: string) => {
+    const l = new Lexer(line);
+    const p = new Parser(l);
+    const program = p.parseProgram();
 
-      if (parser.getErrors().length !== 0) {
-        printParserErrors(output, parser.getErrors());
-        ask();
-        return;
-      }
+    // check parser errors
+    if (p.getErrors().length !== 0) {
+      printParserErrors(p.getErrors());
+      rl.prompt();
+      return;
+    }
 
-      output.write(program.string());
-      output.write("\n");
+    const evaluated = Eval(program);
 
-      ask(); // loop again
-    });
+    if (evaluated !== null) {
+      console.log(evaluated.Inspect());
+    }
 
-    rl.once("close", () => {
-      process.exit(0);
-    });
-  }
-
-  ask();
+    rl.prompt();
+  });
 }
 
-function printParserErrors(out: NodeJS.WritableStream, errors: string[]) {
+// helper function
+function printParserErrors(errors: string[]) {
+  console.log("Parser errors:");
   for (const msg of errors) {
-    out.write("\t" + msg + "\n");
+    console.log("\t" + msg);
   }
 }
-
 // import readline from "readline";
 // import { Lexer } from "../lexer/lexer";
 // import { TokenType } from "../lexer/token";
