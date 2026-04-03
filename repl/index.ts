@@ -1,3 +1,3 @@
 import { start } from "./repl";
 
-start();
+start(process.stdin, process.stdout);

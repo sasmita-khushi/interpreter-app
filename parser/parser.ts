@@ -12,6 +12,8 @@ import { trace, untrace } from "../trace";
 import { BooleanLiteral } from "../ast/boolean-literal";
 import { IfExpression } from "@/ast/if-expression";
 import { BlockStatement } from "../ast/block-statement";
+import { FunctionLiteral } from "../ast/function-literal";
+import { CallExpression } from "@/ast/call-expression";
 
 enum Precedence {
   LOWEST = 1,
@@ -32,6 +34,7 @@ const precendences = new Map<TokenType, Precedence>([
   [TokenType.MINUS, Precedence.SUM],
   [TokenType.SLASH, Precedence.PRODUCT],
   [TokenType.ASTERISK, Precedence.PRODUCT],
+  [TokenType.LPAREN, Precedence.CALL],
 ]);
 
 type PrefixParseFn = () => Expression | null;
@@ -58,6 +61,7 @@ export class Parser {
       this.parseGroupedExpression.bind(this),
     );
     this.registerPrefix(TokenType.IF, () => this.parseIfExpression());
+    this.registerPrefix(TokenType.FUNCTION, () => this.parseFunctionLiteral());
     this.registerInfix(TokenType.PLUS, (left) =>
       this.parseInfixExpression(left),
     );
@@ -78,6 +82,9 @@ export class Parser {
     this.registerInfix(TokenType.GT, (left) => this.parseInfixExpression(left));
     this.registerPrefix(TokenType.TRUE, () => this.parseBoolean());
     this.registerPrefix(TokenType.FALSE, () => this.parseBoolean());
+    this.registerInfix(TokenType.LPAREN, (left) =>
+      this.parseCallExpression(left),
+    );
   }
 
   private nextToken() {
@@ -357,24 +364,6 @@ export class Parser {
     return precendences.get(this.curToken!.type) || Precedence.LOWEST;
   }
 
-  // private parseInfixExpression(left: Expression): Expression | null {
-  //   const expression = infixExpression.new(
-  //     this.curToken!,
-  //     left,
-  //     this.curToken!.literal,
-  //   );
-
-  //   const precedence = this.curPrecedence();
-  //   this.nextToken();
-  //   const right = this.parseExpression(precedence);
-  //   if (!right) {
-  //     return null;
-  //   }
-  //   expression.right = right;
-
-  //   return expression;
-  // }
-
   private parseInfixExpression(left: Expression): Expression {
     const t = trace("parseInfixExpression");
     try {
@@ -408,7 +397,7 @@ export class Parser {
     );
   }
 
-  parseGroupedExpression(): Expression | null {
+  private parseGroupedExpression(): Expression | null {
     this.nextToken(); // skip '('
     const exp = this.parseExpression(Precedence.LOWEST);
     if (!this.expectPeek(TokenType.RPAREN)) {
@@ -417,7 +406,7 @@ export class Parser {
     return exp;
   }
 
-  parseBlockStatement(): BlockStatement {
+  private parseBlockStatement(): BlockStatement {
     const block = new BlockStatement(this.curToken!);
 
     block.statements = [];
@@ -441,7 +430,7 @@ export class Parser {
     return block;
   }
 
-  parseIfExpression(): Expression | null {
+  private parseIfExpression(): Expression | null {
     // expect '('
     if (!this.expectPeek(TokenType.LPAREN)) {
       return null;
@@ -488,5 +477,91 @@ export class Parser {
     );
 
     return expression;
+  }
+
+  private parseFunctionLiteral(): Expression | null {
+    const t = trace("parseFunctionLiteral");
+    try {
+      const lit = new FunctionLiteral(
+        this.curToken!,
+        [],
+        new BlockStatement(this.curToken!),
+      );
+
+      // expect '('
+      if (!this.expectPeek(TokenType.LPAREN)) {
+        return null;
+      }
+
+      // parse parameters
+      lit.parameters = this.parseFunctionParameters();
+
+      // expect '{'
+      if (!this.expectPeek(TokenType.LBRACE)) {
+        return null;
+      }
+
+      // parse function body
+      lit.body = this.parseBlockStatement();
+
+      return lit;
+    } finally {
+      untrace(t);
+    }
+  }
+
+  private parseFunctionParameters(): Identifier[] {
+    const parameters: Identifier[] = [];
+
+    if (this.peekTokenIs(TokenType.RPAREN)) {
+      this.nextToken();
+      return parameters;
+    }
+
+    this.nextToken();
+
+    parameters.push(this.parseIdentifier());
+
+    while (this.peekTokenIs(TokenType.COMMA)) {
+      this.nextToken(); // skip comma
+      this.nextToken(); // move to identifier
+      parameters.push(this.parseIdentifier());
+    }
+
+    if (!this.expectPeek(TokenType.RPAREN)) {
+      return [];
+    }
+
+    return parameters;
+  }
+  private parseCallExpression(left: Expression): Expression | null {
+    const exp = new CallExpression(this.curToken!, left);
+
+    exp.args = this.parseCallArguments();
+
+    return exp;
+  }
+  private parseCallArguments(): Expression[] {
+    const args: Expression[] = [];
+
+    if (this.peekTokenIs(TokenType.RPAREN)) {
+      this.nextToken();
+      return args;
+    }
+
+    this.nextToken();
+    args.push(this.parseExpression(Precedence.LOWEST)!);
+
+    while (this.peekTokenIs(TokenType.COMMA)) {
+      this.nextToken();
+      this.nextToken();
+      args.push(this.parseExpression(Precedence.LOWEST)!);
+    }
+
+    if (!this.expectPeek(TokenType.RPAREN)) {
+      return [];
+    }
+
+    return args;
   }
 }

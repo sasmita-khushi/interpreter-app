@@ -12,6 +12,8 @@ import { BooleanLiteral } from "../ast/boolean-literal";
 import { Program } from "@/ast/program";
 import { IfExpression } from "@/ast/if-expression";
 import { BlockStatement } from "../ast/block-statement";
+import { FunctionLiteral } from "../ast/function-literal";
+import { CallExpression } from "@/ast/call-expression";
 
 test("should return let statement", () => {
   const input = `let x=5;
@@ -542,4 +544,190 @@ test("parses if-else expression correctly", () => {
   const altStmt = alternative.statements[0] as ExpressionStatement;
   const altExp = altStmt.expression as Identifier;
   expect(altExp.value).toBe("y");
+});
+
+describe("Function Literal Parsing", () => {
+  test("should parse function literal correctly", () => {
+    const input = `fn(x, y) { x + y; }`;
+
+    const l = new Lexer(input);
+    const p = new Parser(l);
+    const program = p.parseProgram();
+
+    // check parser errors
+    expect(p.getErrors().length).toBe(0);
+
+    // program should have 1 statement
+    expect(program.statements.length).toBe(1);
+
+    const stmt = program.statements[0];
+    expect(stmt instanceof ExpressionStatement).toBe(true);
+
+    const functionLiteral = (stmt as ExpressionStatement).expression;
+    expect(functionLiteral instanceof FunctionLiteral).toBe(true);
+
+    const fn = functionLiteral as FunctionLiteral;
+
+    // parameters length
+    expect(fn.parameters.length).toBe(2);
+
+    // parameter 1: x
+    expect(fn.parameters[0] instanceof Identifier).toBe(true);
+    expect((fn.parameters[0] as Identifier).value).toBe("x");
+
+    // parameter 2: y
+    expect(fn.parameters[1] instanceof Identifier).toBe(true);
+    expect((fn.parameters[1] as Identifier).value).toBe("y");
+
+    // function body should have 1 statement
+    expect(fn.body.statements.length).toBe(1);
+
+    const bodyStmt = fn.body.statements[0];
+    expect(bodyStmt instanceof ExpressionStatement).toBe(true);
+
+    const expr = (bodyStmt as ExpressionStatement).expression;
+    expect(expr instanceof infixExpression).toBe(true);
+
+    const infix = expr as infixExpression;
+
+    // left: x
+    expect(infix.left instanceof Identifier).toBe(true);
+    expect((infix.left as Identifier).value).toBe("x");
+
+    // operator: +
+    expect(infix.operator).toBe("+");
+
+    // right: y
+    expect(infix.right instanceof Identifier).toBe(true);
+    expect((infix.right as Identifier).value).toBe("y");
+  });
+});
+
+describe("Function Parameter Parsing", () => {
+  const tests = [
+    {
+      input: "fn() {};",
+      expectedParams: [],
+    },
+    {
+      input: "fn(x) {};",
+      expectedParams: ["x"],
+    },
+    {
+      input: "fn(x, y, z) {};",
+      expectedParams: ["x", "y", "z"],
+    },
+  ];
+
+  tests.forEach((tt) => {
+    test(`should parse parameters correctly for: ${tt.input}`, () => {
+      const lexer = new Lexer(tt.input);
+      const parser = new Parser(lexer);
+      const program = parser.parseProgram();
+
+      // check parser errors
+      expect(parser.getErrors().length).toBe(0);
+
+      const stmt = program.statements[0] as ExpressionStatement;
+      const func = stmt.expression as FunctionLiteral;
+
+      // check number of parameters
+      expect(func.parameters.length).toBe(tt.expectedParams.length);
+
+      // check each parameter
+      for (let i = 0; i < tt.expectedParams.length; i++) {
+        const ident = func.parameters[i];
+
+        expect(ident.value).toBe(tt.expectedParams[i]);
+        expect(ident.tokenLiteral()).toBe(tt.expectedParams[i]);
+      }
+    });
+  });
+});
+
+test("Call Expression Parsing (no helpers)", () => {
+  const input = "add(1, 2 * 3, 4 + 5);";
+
+  const lexer = new Lexer(input);
+  const parser = new Parser(lexer);
+  const program = parser.parseProgram();
+
+  // check parser errors
+  expect(parser.getErrors().length).toBe(0);
+
+  // program should have 1 statement
+  expect(program.statements.length).toBe(1);
+
+  const stmt = program.statements[0] as ExpressionStatement;
+
+  // expression should be CallExpression
+  const exp = stmt.expression as CallExpression;
+
+  // function: add
+  expect(exp.func).toBeInstanceOf(Identifier);
+  const func = exp.func as Identifier;
+  expect(func.value).toBe("add");
+
+  // arguments length
+  expect(exp.args.length).toBe(3);
+
+  // -------- Argument 1: 1 --------
+  const arg1 = exp.args[0];
+  expect(arg1).toBeInstanceOf(IntegerLiteral);
+  expect((arg1 as IntegerLiteral).value).toBe(1);
+
+  // -------- Argument 2: 2 * 3 --------
+  const arg2 = exp.args[1];
+  expect(arg2).toBeInstanceOf(infixExpression);
+
+  const infix1 = arg2 as infixExpression;
+  expect(infix1.operator).toBe("*");
+
+  expect(infix1.left).toBeInstanceOf(IntegerLiteral);
+  expect((infix1.left as IntegerLiteral).value).toBe(2);
+
+  expect(infix1.right).toBeInstanceOf(IntegerLiteral);
+  expect((infix1.right as IntegerLiteral).value).toBe(3);
+
+  // -------- Argument 3: 4 + 5 --------
+  const arg3 = exp.args[2];
+  expect(arg3).toBeInstanceOf(infixExpression);
+
+  const infix2 = arg3 as infixExpression;
+  expect(infix2.operator).toBe("+");
+
+  expect(infix2.left).toBeInstanceOf(IntegerLiteral);
+  expect((infix2.left as IntegerLiteral).value).toBe(4);
+
+  expect(infix2.right).toBeInstanceOf(IntegerLiteral);
+  expect((infix2.right as IntegerLiteral).value).toBe(5);
+});
+
+describe("Operator Precedence Parsing", () => {
+  const tests: { input: string; expected: string }[] = [
+    {
+      input: "a + add(b * c) + d",
+      expected: "((a + add((b * c))) + d)",
+    },
+    {
+      input: "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+      expected: "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+    },
+    {
+      input: "add(a + b + c * d / f + g)",
+      expected: "add((((a + b) + ((c * d) / f)) + g))",
+    },
+  ];
+
+  tests.forEach(({ input, expected }) => {
+    const lexer = new Lexer(input);
+    const parser = new Parser(lexer);
+    const program = parser.parseProgram();
+
+    // check parser errors
+    expect(parser.getErrors().length).toBe(0);
+
+    const actual = program.string();
+    expect(actual).toBe(expected);
+  });
 });
