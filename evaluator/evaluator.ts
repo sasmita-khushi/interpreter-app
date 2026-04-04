@@ -3,11 +3,16 @@ import { Program } from "../ast/program";
 import { ExpressionStatement } from "../ast/expression-statement";
 import { infixExpression } from "../ast/infix-expression";
 import { BooleanLiteral } from "../ast/boolean-literal";
+import { BlockStatement } from "@/ast/block-statement";
+import { IfExpression } from "@/ast/if-expression";
 
 import { Object as MonkeyObject } from "../object/object";
 import { Integer } from "../object/integer";
 import { Boolean } from "../object/booelan";
 import { PrefixExpression } from "@/ast/prefix-expression";
+import { NULL } from "../object/null";
+import { ReturnStatement } from "@/ast/return-statement";
+import { ReturnValue } from "@/object/return";
 
 export const TRUE = new Boolean(true);
 export const FALSE = new Boolean(false);
@@ -20,7 +25,10 @@ function nativeBoolToBooleanObject(input: boolean): Boolean {
 // Eval uses recursion to evaluate small pieces first, then combines them into final result
 export function Eval(node: AstNode): MonkeyObject | null {
   if (node instanceof Program) {
-    return evalStatements(node.statements);
+    return evalProgram(node);
+  }
+  if (node instanceof BlockStatement) {
+    return evalBlockStatement(node);
   }
 
   if (node instanceof ExpressionStatement) {
@@ -46,6 +54,24 @@ export function Eval(node: AstNode): MonkeyObject | null {
     return evalPrefixExpression(node.operator, right);
   }
 
+  if (node instanceof BlockStatement) {
+    return evalStatements(node.statements);
+  }
+
+  if (node instanceof IfExpression) {
+    return evalIfExpression(node);
+  }
+
+  if (node instanceof ReturnStatement) {
+    if (!node.returnValue) {
+      return null; // or handle error
+    }
+
+    const val = Eval(node.returnValue);
+    if (val === null) return null;
+
+    return new ReturnValue(val);
+  }
   console.log("Unhandled node:", node);
   return null;
 }
@@ -57,6 +83,9 @@ function evalStatements(statements: Statement[]): MonkeyObject | null {
     const evaluated = Eval(statement);
     if (evaluated !== null) {
       result = evaluated;
+    }
+    if (result instanceof ReturnValue) {
+      return result.value; // unwrap and return
     }
   }
 
@@ -147,4 +176,52 @@ function evalMinusPrefixOperatorExpression(
 
   // return new Integer with negative value
   return new Integer(-value);
+}
+
+function evalIfExpression(ie: IfExpression): MonkeyObject {
+  const condition = Eval(ie.condition);
+
+  if (isTruthy(condition)) {
+    return Eval(ie.consequence)!;
+  } else if (ie.alternative) {
+    return Eval(ie.alternative)!;
+  } else {
+    return NULL;
+  }
+}
+function isTruthy(obj: MonkeyObject | null): boolean {
+  if (obj === null) return false;
+  if (obj === TRUE) return true;
+  if (obj === FALSE) return false;
+
+  return true;
+}
+
+function evalProgram(program: Program): MonkeyObject | null {
+  let result: MonkeyObject | null = null;
+
+  for (const statement of program.statements) {
+    result = Eval(statement);
+
+    // ✅ unwrap ONLY here
+    if (result instanceof ReturnValue) {
+      return result.value;
+    }
+  }
+
+  return result;
+}
+function evalBlockStatement(block: BlockStatement): MonkeyObject | null {
+  let result: MonkeyObject | null = null;
+
+  for (const statement of block.statements) {
+    result = Eval(statement);
+
+    // 🚨 IMPORTANT: don't unwrap
+    if (result instanceof ReturnValue) {
+      return result;
+    }
+  }
+
+  return result;
 }

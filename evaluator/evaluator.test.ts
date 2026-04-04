@@ -5,6 +5,7 @@ import { Eval } from "./evaluator";
 import { describe, expect, test } from "bun:test";
 import { Integer } from "../object/integer";
 import { Boolean as MonkeyBoolean } from "../object/booelan";
+import { NULL } from "@/object/null";
 
 describe("TestEvalIntegerExpression", () => {
   const tests: { input: string; expected: number }[] = [
@@ -150,5 +151,58 @@ test("test eval Boolean expression 2 ", () => {
     expect(evaluated).toBeInstanceOf(MonkeyBoolean);
     const result = evaluated as MonkeyBoolean;
     expect(result.value).toBe(tt.expected);
+  });
+});
+
+test("test if else expression", () => {
+  let tests: { input: string; expected: number | null }[] = [
+    { input: "if (true) { 10 }", expected: 10 },
+    { input: "if (false) { 10 }", expected: null },
+    { input: "if (1) { 10 }", expected: 10 },
+    { input: "if (1 < 2) { 10 }", expected: 10 },
+    { input: "if (1 > 2) { 10 }", expected: null },
+    { input: "if (1 > 2) { 10 } else { 20 }", expected: 20 },
+    { input: "if (1 < 2) { 10 } else { 20 }", expected: 10 },
+  ];
+
+  tests.forEach(({ input, expected }) => {
+    const lexer = new Lexer(input);
+    const parser = new Parser(lexer);
+    const program = parser.parseProgram();
+
+    const evaluated = Eval(program);
+
+    if (expected !== null) {
+      // check Integer
+      expect(evaluated).toBeInstanceOf(Integer);
+      expect((evaluated as Integer).value).toBe(expected);
+    } else {
+      // check NULL
+      expect(evaluated).toBe(NULL);
+    }
+  });
+});
+
+test("return statement", () => {
+  const tests: { input: string; expected: number }[] = [
+    { input: "return 10;", expected: 10 },
+    { input: "return 10; 9;", expected: 10 },
+    { input: "return 2 * 5; 9;", expected: 10 },
+    { input: "9; return 2 * 5; return 10;", expected: 10 },
+    {
+      input: "if (10 > 1) { if (10 > 1) { return 10; } return 1; }",
+      expected: 10,
+    },
+  ];
+
+  tests.forEach(({ input, expected }) => {
+    const lexer = new Lexer(input);
+    const parser = new Parser(lexer);
+    const program = parser.parseProgram();
+
+    const evaluated = Eval(program);
+
+    expect(evaluated).toBeInstanceOf(Integer);
+    expect((evaluated as Integer).value).toBe(expected);
   });
 });

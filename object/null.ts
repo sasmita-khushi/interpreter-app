@@ -9,3 +9,5 @@ export class Null implements Object {
     return "null";
   }
 }
+
+export const NULL = new Null();
